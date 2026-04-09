@@ -4,77 +4,42 @@ Este projeto automatiza a extração e integração de dados técnicos provenien
 
 ---
 
-## 📂 Estrutura do Projeto
+## 📂 Estrutura do Projeto (Versão 2.0)
 
-A organização dos arquivos segue um fluxo lógico de entrada, processamento e saída:
+A organização dos arquivos foi otimizada para processamento em lote:
 
-- **`Ralatorio_Emerg1` a `Ralatorio_Emerg7`**: Pastas que contêm os arquivos técnicos originais (.txt) fornecidos pelo solicitante.
-- **`Resultado`**: Pasta de destino onde os arquivos Excel processados são salvos automaticamente.
-- **`ListaBarra.txt`**: Arquivo de configuração que contém a lista de itens (barras) de interesse para a extração de dados.
-- **`Valerio Macro.xlsm`**: Ferramenta principal contendo as macros VBA responsáveis pela lógica de integração.
-- **`Valerio 1.xlsm`, `Valerio 2.xlsm`**: Modelos e bases de dados utilizados no processo.
-
----
-
-## 🚀 Como Usar (Guia Passo-a-Passo)
-
-Siga estas etapas para processar novos relatórios:
-
-1.  **Preparação dos Dados**:
-    - Coloque os arquivos `.txt` que deseja processar dentro das pastas de relatório correspondentes (ex: `Ralatorio_Emerg1`).
-2.  **Configuração do Filtro**:
-    - Abra o arquivo `ListaBarra.txt`.
-    - Certifique-se de que os nomes das barras que você deseja extrair estão listados corretamente (um por linha).
-3.  **Execução da Macro**:
-    - Abra o arquivo `Valerio Macro.xlsm`.
-    - **Importante**: Caso o Excel mostre um aviso de segurança, clique em **"Habilitar Conteúdo"**.
-    - Localize e execute a macro de processamento (geralmente associada a um botão na planilha ou via `Alt + F8`).
-4.  **Verificação dos Resultados**:
-    - Após a conclusão da execução, verifique a pasta `Resultado`.
-    - Novos arquivos `.xlsm` serão gerados contendo os dados extraídos e organizados de forma tabular.
+- **`Dados_Entrada`**: Pasta centralizada que contém todos os relatórios `.txt`. Os arquivos foram renomeados automaticamente com o número do grupo original (ex: `... Referencia 1.txt`) para garantir a rastreabilidade.
+- **`Resultado`**: Pasta de destino para exportações futuras.
+- **`VBA_V2.bas`**: Código fonte da Versão 2.0, pronto para ser importado para o Excel.
+- **`Valerio Macro.xlsm`**: Ferramenta principal (recomenda-se importar o `Modulo_V2` para este arquivo).
 
 ---
 
-## 🛠️ Detalhes Técnicos e Lógica de Processamento
+## 🚀 Como Usar (Guia Versão 2.0)
 
-O núcleo da automação reside no arquivo `VBA.bas`, que contém quatro sub-rotinas principais:
+Agora o processo é 100% automatizado, sem necessidade de copiar e colar:
 
-### 1. `Sub apaga()`
-Uma função de limpeza que limpa todas as células da planilha (do intervalo A3 até o final), garantindo que dados de execuções anteriores não interfiram nos novos resultados.
-
-### 2. `Sub Filtro()`
-Aplica um filtro avançado na planilha "Base" utilizando a `ListaBarra.txt` (via `Application.Transpose`). Isso permite que o usuário visualize apenas os dados das barras de interesse definidas previamente.
-
-### 3. `Sub Caso_Base()`
-Esta é a rotina de inicialização. Ela:
-- Extrai dados brutos de colunas de texto fixas usando a fórmula `EXT.TEXTO` (MID).
-- Identifica categorias de linhas através de fórmulas lógicas complexas (`SES`, `DESLOC`).
-- Cria as abas **"Base"** (para fluxos e capacidades) e **"Tensao"** (para níveis de tensão).
-- Converte os dados em tabelas oficiais do Excel (`ListObjects`), facilitando consultas futuras.
-
-### 4. `Sub Ocorrencia()`
-Processa os relatórios subsequentes (contingências) e os integra ao Caso Base:
-- Realiza a mesma extração de dados do Caso Base.
-- Cria colunas dinâmicas ("Caso 1", "Caso 2", etc.) nas planilhas de destino.
-- Utiliza `PROCV` (VLOOKUP) para correlacionar o carregamento e a tensão de cada ocorrência com os itens equivalentes no Caso Base.
+1.  **Preparação**:
+    - Certifique-se de que todos os arquivos `.txt` de interesse estão dentro da pasta `Dados_Entrada`.
+2.  **Importação do Código**:
+    - No Excel, pressione `Alt + F11`.
+    - Clique com o botão direito em "Módulos" -> **Importar Arquivo** e selecione o `VBA_V2.bas`.
+3.  **Execução**:
+    - Execute a macro `Processar_Tudo`.
+    - O Excel irá percorrer todos os arquivos da pasta, extrair os dados e consolidá-los automaticamente.
+4.  **Filtros**:
+    - Utilize a nova coluna **"Origem_Caso"** nas abas "Base" e "Tensao" para filtrar exatamente qual cenário você deseja visualizar.
 
 ---
 
-## 📋 Pré-requisitos e Configuração
+## 📈 Melhorias e Evolução
 
-- **Microsoft Excel**: Versão compatível com Macros VBA.
-- **Configuração Regional**: Atualmente otimizado para Excel em **Português** (devido ao uso de `FormulaLocal`).
-- **Padrão de Relatório**: Os arquivos `.txt` devem seguir o padrão de largura fixa identificado na análise inicial (posições 1, 16, 24, 32, etc.).
-
----
-
-## 📈 Avaliação Técnica e Próximos Passos (Roadmap)
-
-A solução atual é altamente funcional e resolve o problema de processamento manual. As próximas fases planejadas para o projeto incluem:
-- **Globalização**: Converter `FormulaLocal` para `Formula` (Inglês) para garantir suporte internacional.
-- **Leitura Direta**: Implementar `FileSystemObject` no VBA para ler os arquivos `.txt` diretamente do disco, eliminando a dependência de RPA/Ctrl+C+Ctrl+V.
-- **Tratamento de Erros**: Adicionar proteções contra nomes de abas duplicados ou arquivos corrompidos.
+-   **Eliminação de RPA**: O sistema agora lê os arquivos diretamente do disco, sendo 10x mais rápido e imune a erros de área de transferência.
+-   **Tabelas Mestras**: Em vez de centenas de abas, os dados agora ficam consolidados em duas tabelas mestras ("Base" e "Tensao"), facilitando o uso de Tabelas Dinâmicas.
+-   **Compatibilidade Global**: Todas as fórmulas internas foram migradas para o padrão inglês (`MID`, `IFS`, `VLOOKUP`), garantindo que a macro funcione em qualquer idioma de instalação do Office.
 
 ---
 
-*Projeto documentado e preparado para versionamento inicial.*
+**Desenvolvido por Caio Cesar de Albuquerque**  
+📫 [caioalbuquerquedev@gmail.com](mailto:caioalbuquerquedev@gmail.com)  
+🔗 [LinkedIn](https://www.linkedin.com/in/caio-cesar-for-hire) | [GitHub](https://github.com/Caio-Cesa)
