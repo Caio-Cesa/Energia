@@ -1,13 +1,7 @@
 Attribute VB_Name = "Modulo_V2"
 
 ' ==============================================================================
-' PROJETO VALERIO - VERS√ÉO 2.0 (MODERNA & GLOBAL)
-' ==============================================================================
-' Melhorias:
-' 1. Importa√ß√£o direta de arquivos .txt (sem necessidade de Ctrl+C / Ctrl+V)
-' 2. Consolida√ß√£o autom√°tica de m√∫ltiplos arquivos com identifica√ß√£o de origem.
-' 3. F√≥rmulas globalizadas (Ingl√™s) para compatibilidade internacional.
-' 4. Otimiza√ß√£o de performance e tratamento de erros.
+' PROJETO VALERIO - VERS√O 2.0 (FLUXO DUAS ETAPAS)
 ' ==============================================================================
 
 Sub Processar_Tudo()
@@ -15,24 +9,23 @@ Sub Processar_Tudo()
     Dim pasta As Object
     Dim arquivo As Object
     Dim caminhoPasta As String
-    Dim wBase As Worksheet, wTensao As Worksheet
+    Dim wBase As Worksheet
     Dim contador As Long
     
-    ' Configura√ß√µes Iniciais
+    ' ConfiguraÁıes Iniciais
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
     Application.DisplayAlerts = False
     
     caminhoPasta = ActiveWorkbook.Path & "\Dados_Entrada\"
     
-    ' Garantir que as abas existam e estejam limpas
+    ' Garantir que a aba mestre exista e esteja limpa
     Set wBase = PrepararPlanilha("Base", True)
-    Set wTensao = PrepararPlanilha("Tensao", True)
     
     Set fso = CreateObject("Scripting.FileSystemObject")
     
     If Not fso.FolderExists(caminhoPasta) Then
-        MsgBox "Pasta 'Dados_Entrada' n√£o encontrada no diret√≥rio: " & ActiveWorkbook.Path, vbCritical
+        MsgBox "Pasta 'Dados_Entrada' n„o encontrada!", vbCritical
         GoTo Finalizar
     End If
     
@@ -41,19 +34,17 @@ Sub Processar_Tudo()
     
     ' Loop por cada arquivo .txt na pasta
     For Each arquivo In pasta.Files
-        If Right(arquivo.Name, 4) = ".txt" Then
+        If LCase(Right(arquivo.Name, 4)) = ".txt" Then
             contador = contador + 1
-            Call Importar_E_Processar(arquivo.Path, arquivo.Name, wBase, wTensao, (contador = 1))
+            Call Importar_E_Processar(arquivo.Path, arquivo.Name, wBase)
         End If
     Next arquivo
     
     If contador = 0 Then
-        MsgBox "Nenhum arquivo .txt encontrado na pasta Dados_Entrada.", vbExclamation
+        MsgBox "Nenhum arquivo .txt encontrado.", vbExclamation
     Else
-        ' Finalizar formata√ß√£o das tabelas
-        FormatarComoTabela "Base", wBase
-        FormatarComoTabela "Tensao", wTensao
-        MsgBox "Processamento conclu√≠do! " & contador & " arquivos processados.", vbInformation
+        FormatarComoTabela wBase
+        MsgBox "Processamento concluÌdo! " & contador & " arquivos processados.", vbInformation
     End If
 
 Finalizar:
@@ -67,7 +58,6 @@ Function PrepararPlanilha(nome As String, limpar As Boolean) As Worksheet
     On Error Resume Next
     Set ws = Sheets(nome)
     On Error GoTo 0
-    
     If ws Is Nothing Then
         Set ws = Sheets.Add(After:=Sheets(Sheets.Count))
         ws.Name = nome
@@ -77,14 +67,13 @@ Function PrepararPlanilha(nome As String, limpar As Boolean) As Worksheet
     Set PrepararPlanilha = ws
 End Function
 
-Sub Importar_E_Processar(caminho As String, nomeArquivo As String, wBase As Worksheet, wTensao As Worksheet, ehPrimeiro As Boolean)
+Sub Importar_E_Processar(caminho As String, nomeArquivo As String, wBase As Worksheet)
     Dim wTemp As Worksheet
     Dim iFile As Integer
     Dim strLine As String
-    Dim linha As Long, linha_fim As Long
-    Dim lastRowBase As Long, lastRowTensao As Long
+    Dim linha As Long, linha_fim As Long, start_match As Long
+    Dim lastRowBase As Long
     
-    ' Criar aba tempor√°ria para o processamento do texto bruto
     Set wTemp = Sheets.Add
     iFile = FreeFile
     Open caminho For Input As #iFile
@@ -92,18 +81,18 @@ Sub Importar_E_Processar(caminho As String, nomeArquivo As String, wBase As Work
     linha = 1
     Do Until EOF(iFile)
         Line Input #iFile, strLine
-        wTemp.Cells(linha, 2).Value = strLine ' Mant√©m na Coluna B para compatibilidade com l√≥gica anterior
+        wTemp.Cells(linha, 2).Value = strLine ' Texto bruto na B
         linha = linha + 1
     Loop
     Close #iFile
     
-    ' Localizar in√≠cio do relat√≥rio
+    ' Localizar inÌcio do relatÛrio
     On Error Resume Next
-    linha = 0
-    linha = Application.WorksheetFunction.Match("*RELATORIO COMPLETO DO SISTEMA*", wTemp.Range("B:B"), 0)
+    start_match = 0
+    start_match = Application.WorksheetFunction.Match("*RELATORIO COMPLETO DO SISTEMA*", wTemp.Range("B:B"), 0)
     On Error GoTo 0
     
-    If linha = 0 Then
+    If start_match = 0 Then
         Application.DisplayAlerts = False
         wTemp.Delete
         Application.DisplayAlerts = True
@@ -112,99 +101,91 @@ Sub Importar_E_Processar(caminho As String, nomeArquivo As String, wBase As Work
     
     linha_fim = wTemp.Cells(wTemp.Rows.Count, 2).End(xlUp).Row
     
-    ' EXTRA√á√ÉO USANDO F√ìRMULAS GLOBAIS (INGL√äS)
-    ' Colunas V at√© AA como no original, mas traduzidas
+    ' ==========================================================================
+    ' PASSO 1: EXTRA«√O BRUTA (EXT.TEXTO)
+    ' ==========================================================================
     With wTemp
-        ' Identificadores de categoria (Original V at√© AA)
-        ' Coluna V: Identificador de Linha
-        .Range("V" & linha & ":V" & linha_fim).Formula = "=IFERROR(IFS(B" & linha & "=""  .............."",OFFSET(B" & linha & ",2,0),B" & linha & "="" X-------------X"",OFFSET(B" & linha & ",3,0),TRUE,V" & linha - 1 & "),""-"")"
-        ' Coluna W: "De"
-        .Range("W" & linha & ":W" & linha_fim).Formula = "=IF(LEN(V" & linha & ")<2,""-"",MID(B" & linha & ",1,16))"
-        ' Coluna X: "Para"
-        .Range("X" & linha & ":X" & linha_fim).Formula = "=IF(LEN(V" & linha & ")<2,""-"",MID(B" & linha & ",16,9))"
-        ' Coluna Y: "Cir"
-        .Range("Y" & linha & ":Y" & linha_fim).Formula = "=IF(LEN(V" & linha & ")<2,""-"",MID(B" & linha & ",24,9))"
-        ' Coluna Z: "Capacidade"
-        .Range("Z" & linha & ":Z" & linha_fim).Formula = "=IF(LEN(V" & linha & ")<2,""-"",MID(B" & linha & ",32,9))"
-        ' Coluna AA: "Carregamento"
-        .Range("AA" & linha & ":AA" & linha_fim).Formula = "=IF(LEN(V" & linha & ")<2,""-"",MID(B" & linha & ",40,9))"
-        ' Coluna AB: "Tens√£o"
-        .Range("AB" & linha & ":AB" & linha_fim).Formula = "=IF(LEN(V" & linha & ")<2,""-"",MID(B" & linha & ",76,7))"
-        ' Coluna AC: Origem (Nome do Arquivo)
-        .Range("AC" & linha & ":AC" & linha_fim).Value = nomeArquivo
+        ' Extraindo para as colunas E atÈ Y (Ìndices 5 a 25)
+        .Range(.Cells(start_match, 5), .Cells(linha_fim, 5)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";1;16)"
+        .Range(.Cells(start_match, 6), .Cells(linha_fim, 6)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";16;9)"
+        .Range(.Cells(start_match, 7), .Cells(linha_fim, 7)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";24;9)"
+        .Range(.Cells(start_match, 8), .Cells(linha_fim, 8)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";32;9)"
+        .Range(.Cells(start_match, 9), .Cells(linha_fim, 9)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";40;9)"
+        .Range(.Cells(start_match, 10), .Cells(linha_fim, 10)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";48;13)"
+        .Range(.Cells(start_match, 11), .Cells(linha_fim, 11)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";60;9)"
+        .Range(.Cells(start_match, 12), .Cells(linha_fim, 12)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";68;9)"
+        .Range(.Cells(start_match, 13), .Cells(linha_fim, 13)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";76;7)"
+        .Range(.Cells(start_match, 14), .Cells(linha_fim, 14)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";82;14)"
+        .Range(.Cells(start_match, 15), .Cells(linha_fim, 15)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";95;4)"
+        .Range(.Cells(start_match, 16), .Cells(linha_fim, 16)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";98;9)"
+        .Range(.Cells(start_match, 17), .Cells(linha_fim, 17)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";106;9)"
+        .Range(.Cells(start_match, 18), .Cells(linha_fim, 18)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";114;9)"
+        .Range(.Cells(start_match, 19), .Cells(linha_fim, 19)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";122;8)"
+        .Range(.Cells(start_match, 20), .Cells(linha_fim, 20)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";129;7)"
+        .Range(.Cells(start_match, 21), .Cells(linha_fim, 21)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";135;5)"
+        .Range(.Cells(start_match, 22), .Cells(linha_fim, 22)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";139;10)"
+        .Range(.Cells(start_match, 23), .Cells(linha_fim, 23)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";148;10)"
+        .Range(.Cells(start_match, 24), .Cells(linha_fim, 24)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";157;7)"
+        .Range(.Cells(start_match, 25), .Cells(linha_fim, 25)).FormulaLocal = "=EXT.TEXTO($B" & start_match & ";163;7)"
         
-        ' Converter para Valores para agilizar
-        .Range("V" & linha & ":AC" & linha_fim).Value = .Range("V" & linha & ":AC" & linha_fim).Value
+        ' Converter extraÁıes para Valores
+        .Range("E" & start_match & ":Y" & linha_fim).Value = .Range("E" & start_match & ":Y" & linha_fim).Value
         
-        ' Filtrar e Limpar dados irrelevantes
-        .Range("V" & linha & ":AC" & linha_fim).AutoFilter Field:=1, Criteria1:="=-", Operator:=xlOr, Criteria2:="="
+        ' =========================================================================
+        ' PASSO 2: L”GICA DE CATEGORIA (SES) SOBRE OS DADOS EXTRAÕDOS
+        ' =========================================================================
+        ' Coluna V (Ìndice 22) baseada no que foi extraÌdo para a Coluna E (Ìndice 5)
+        .Range("V" & start_match + 3 & ":V" & linha_fim).FormulaLocal = "=SEERRO(SES(E" & start_match + 1 & "=""  .............."";DESLOC(E" & start_match + 1 & ";2;0);E" & start_match & "="" X-------------X"";DESLOC(E" & start_match & ";3;0);CORRESP(""  .............."";E" & start_match + 3 & ":E" & start_match + 30 & ";0)>2;V" & start_match + 2 & ");""-"")"
+        
+        Calculate
+        .Range("V" & start_match & ":V" & linha_fim).Value = .Range("V" & start_match & ":V" & linha_fim).Value
+        
+        ' Coluna Z (Ìndice 26): Origem
+        .Range("Z" & start_match & ":Z" & linha_fim).Value = nomeArquivo
+        
+        ' Filtrar lixo (Onde V = "-")
+        .Range("V" & start_match & ":Z" & linha_fim).AutoFilter Field:=1, Criteria1:="=-", Operator:=xlOr, Criteria2:="="
         On Error Resume Next
-        .Range("V" & linha + 1 & ":AC" & linha_fim).SpecialCells(xlCellTypeVisible).EntireRow.Delete
+        .Range("V" & start_match + 1 & ":V" & linha_fim).SpecialCells(xlCellTypeVisible).EntireRow.Delete
         On Error GoTo 0
         .AutoFilterMode = False
         
-        ' Transferir para Base (Fluxos)
+        ' =========================================================================
+        ' PASSO 3: CONSOLIDA«√O
+        ' =========================================================================
         lastRowBase = wBase.Cells(wBase.Rows.Count, 1).End(xlUp).Row
-        If lastRowBase = 1 And wBase.Cells(1, 1).Value = "" Then lastRowBase = 0 ' Primeira execu√ß√£o
+        If lastRowBase = 1 And wBase.Cells(1, 1).Value = "" Then lastRowBase = 0
         
-        ' Copiar W at√© AA e AC (De, Para, Cir, Cap, Carreg, Origem)
-        .Range("W" & linha & ":AA" & linha_fim).Copy
+        ' Copiar E:Y (Dados) e Z (Origem)
+        .Range("E" & start_match & ":Y" & linha_fim).Copy
         wBase.Cells(lastRowBase + 1, 1).PasteSpecial xlPasteValues
-        .Range("AC" & linha & ":AC" & linha_fim).Copy
-        wBase.Cells(lastRowBase + 1, 6).PasteSpecial xlPasteValues
-        
-        ' Transferir para Tensao
-        lastRowTensao = wTensao.Cells(wTensao.Rows.Count, 1).End(xlUp).Row
-        If lastRowTensao = 1 And wTensao.Cells(1, 1).Value = "" Then lastRowTensao = 0
-        
-        ' Copiar W (Nome da Barra), AB (Tens√£o) e AC (Origem)
-        .Range("W" & linha & ":W" & linha_fim).Copy
-        wTensao.Cells(lastRowTensao + 1, 1).PasteSpecial xlPasteValues
-        .Range("AB" & linha & ":AB" & linha_fim).Copy
-        wTensao.Cells(lastRowTensao + 1, 2).PasteSpecial xlPasteValues
-        .Range("AC" & linha & ":AC" & linha_fim).Copy
-        wTensao.Cells(lastRowTensao + 1, 3).PasteSpecial xlPasteValues
-        
+        .Range("Z" & start_match & ":Z" & linha_fim).Copy
+        wBase.Cells(lastRowBase + 1, 22).PasteSpecial xlPasteValues
     End With
     
-    ' Limpar aba tempor√°ria
     Application.DisplayAlerts = False
     wTemp.Delete
     Application.DisplayAlerts = True
 End Sub
 
-Sub FormatarComoTabela(topo As String, ws As Worksheet)
+Sub FormatarComoTabela(ws As Worksheet)
     Dim lastRow As Long, lastCol As Long
     Dim tbl As ListObject
     
-    ws.Select
     lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
-    lastCol = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+    lastCol = 22
     
-    ' Adicionar Cabe√ßalhos se necess√°rio
-    If topo = "Base" Then
-        ws.Cells(1, 1).Value = "De"
-        ws.Cells(1, 2).Value = "Para"
-        ws.Cells(1, 3).Value = "Circuito"
-        ws.Cells(1, 4).Value = "Capacidade"
-        ws.Cells(1, 5).Value = "Carregamento"
-        ws.Cells(1, 6).Value = "Origem_Caso"
-    Else
-        ws.Cells(1, 1).Value = "Barra"
-        ws.Cells(1, 2).Value = "Tens√£o"
-        ws.Cells(1, 3).Value = "Origem_Caso"
-    End If
+    ' CabeÁalhos B·sicos
+    ws.Cells(1, 1).Value = "De / Barra"
+    ws.Cells(1, 2).Value = "Para"
+    ws.Cells(1, 13).Value = "Carregamento"
+    ws.Cells(1, 22).Value = "Origem_Caso"
     
-    ' Criar Tabela
-    Set tbl = ws.ListObjects.Add(xlSrcRange, ws.Range(ws.Cells(1, 1), ws.Cells(lastRow, lastCol)), , xlYes)
-    tbl.TableStyle = "TableStyleMedium2"
-    
-    ' Limpar linhas vazias ou de erro na Tens√£o (Filtro final)
-    If topo = "Tensao" Then
-        ws.Range("B:B").AutoFilter Field:=1, Criteria1:="<0.1", Operator:=xlOr, Criteria2:="-" ' Filtra lixo
+    If lastRow > 1 Then
         On Error Resume Next
-        ws.Range("B2:B" & lastRow).SpecialCells(xlCellTypeVisible).EntireRow.Delete
+        Set tbl = ws.ListObjects.Add(xlSrcRange, ws.Range(ws.Cells(1, 1), ws.Cells(lastRow, lastCol)), , xlYes)
+        tbl.TableStyle = "TableStyleMedium2"
+        ws.Columns("A:V").AutoFit
         On Error GoTo 0
-        ws.AutoFilterMode = False
     End If
 End Sub
