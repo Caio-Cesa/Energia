@@ -1,107 +1,184 @@
 import pandas as pd
 import os
 
-def extrair_valor(linha, start, length):
-    """Auxiliar para extração segura de substrings."""
+def extrair(linha, inicio, fim):
+    """Extrai substring segura."""
     try:
-        return linha[start:start+length].strip()
+        return linha[inicio:fim].strip()
     except:
-        return "-"
+        return ""
 
-def processar_relatorio_consolidado(caminho_arquivo):
+def processar_arquivo(caminho):
+    """Processa um arquivo focando na seção RELATORIO COMPLETO (PAG 4+)."""
     registros = []
-    categoria_atual = "Caso Base"
+    sessao = "-"
+    barra = None
     
-    with open(caminho_arquivo, 'r', encoding='windows-1252', errors='replace') as f:
-        linhas = f.readlines()
-        
-        i = 0
-        while i < len(linhas):
-            linha = linhas[i]
+    # Estado do parser
+    em_dados = False
+    skip_header = False
+    x_count = 0
+    
+    with open(caminho, 'r', encoding='windows-1252', errors='replace') as f:
+        for linha in f:
+            raw = linha.rstrip('\r\n')
             
-            # --- 1. Identificar Categoria (Sessão) ---
-            if "  .............." in linha and i + 2 < len(linhas):
-                categoria_atual = linhas[i+2][:30].strip()
-            elif " X-------------X" in linha and i + 3 < len(linhas):
-                categoria_atual = linhas[i+3][:30].strip()
-
-            # --- 2. Lógica de Captura (Esquema Fixo de 2 Linhas) ---
-            # Verificamos se a linha atual começa com um número (Possível NUM. da Barra)
-            primeiro_campo = extrair_valor(linha, 0, 7)
+            # --- CONTROLE DE SEÇÃO ---
+            if "RELATORIO COMPLETO DO SISTEMA" in raw:
+                parts = raw.split("*")
+                sessao = " ".join(p.strip() for p in parts[1:]) if len(parts) > 1 else "-"
+                em_dados = False
+                skip_header = True
+                x_count = 0
+                continue
             
-            if primeiro_campo.isdigit():
-                # Temos a Parte A! Agora buscamos a Parte B (Linha de baixo)
-                if i + 1 < len(linhas):
-                    linha_b = linhas[i+1]
-                    
-                    # Extração Parte A (Números)
-                    num = primeiro_campo
-                    kv = extrair_valor(linha, 7, 5)
-                    tipo = extrair_valor(linha, 12, 5)
-                    tensao = extrair_valor(linha, 17, 8)
-                    geracao = extrair_valor(linha, 25, 10)
-                    
-                    # Extração Parte B (Nome e Detalhes)
-                    nome = extrair_valor(linha_b, 0, 16)
-                    ang = extrair_valor(linha_b, 16, 7)
-                    mvar = extrair_valor(linha_b, 23, 9)
-                    
-                    # Validamos se a Parte B realmente parece um nome (e não uma linha vazia ou 'X--X')
-                    if nome != "-" and "---" not in nome:
-                        registro = {
-                            "NUM": num,
-                            "NOME": nome,
-                            "KV": kv,
-                            "TIPO": tipo,
-                            "TENSÃO": tensao,
-                            "GERACAO_MW": geracao,
-                            "ANGULO": ang,
-                            "Mvar": mvar,
-                            "SESSÃO": categoria_atual,
-                            "ARQUIVO_ORIGEM": os.path.basename(caminho_arquivo)
-                        }
-                        registros.append(registro)
-                        i += 1 # Pula a linha B já processada
+            # Skip de cabeçalho: espera 2 linhas X para entrar nos dados
+            if skip_header:
+                if raw.lstrip().startswith('X') and '---' in raw:
+                    x_count += 1
+                    if x_count >= 2:
+                        em_dados = True
+                        skip_header = False
+                continue
+            
+            if not em_dados:
+                continue
+            
+            # --- DENTRO DA SEÇÃO DE DADOS ---
+            # Quebra de página
+            if 'CEPEL' in raw or 'PAG.' in raw:
+                em_dados = False
+                continue
+            
+            if not raw.strip():
+                continue
+            
+            # Linha X no meio dos dados (segurança)
+            if raw.lstrip().startswith('X') and '---' in raw:
+                continue
+            
+            # Separador de pontos = fim do bloco da barra
+            if '........' in raw:
+                if barra and not barra.get('_tem_fluxo'):
+                    reg = {k: v for k, v in barra.items() if not k.startswith('_')}
+                    registros.append(reg)
+                barra = None
+                continue
+            
+            # --- CLASSIFICAÇÃO DA LINHA ---
+            campo_num = raw[0:7].strip()
+            campo_esq = raw[0:23].strip()
+            
+            # LINHA A: Dados numéricos da barra (NUM no início)
+            if campo_num.isdigit():
+                # Salvar barra anterior sem fluxos
+                if barra and not barra.get('_tem_fluxo'):
+                    reg = {k: v for k, v in barra.items() if not k.startswith('_')}
+                    registros.append(reg)
                 
-            i += 1
+                barra = {
+                    'NUM': campo_num,
+                    'KV': extrair(raw, 7, 12),
+                    'TIPO': extrair(raw, 12, 15),
+                    'TENSAO': extrair(raw, 15, 23),
+                    'GERACAO_MW': extrair(raw, 23, 31),
+                    'INJ_EQV_MW': extrair(raw, 31, 39),
+                    'CARGA_MW': extrair(raw, 39, 47),
+                    'ELO_CC_MW': extrair(raw, 47, 59),
+                    'SHUNT_Mvar': extrair(raw, 59, 67),
+                    'MOTOR_MW': extrair(raw, 67, 75),
+                    'SESSAO': sessao,
+                    'ARQUIVO': os.path.basename(caminho),
+                    '_tem_fluxo': False,
+                    '_tem_nome': False
+                }
             
+            # LINHA B: Nome da barra (segue a Linha A)
+            elif barra and not barra.get('_tem_nome') and any(c.isalpha() for c in raw[0:16]):
+                barra['NOME'] = extrair(raw, 0, 16)
+                barra['ANG'] = extrair(raw, 16, 23)
+                barra['GERACAO_Mvar'] = extrair(raw, 23, 31)
+                barra['INJ_EQV_Mvar'] = extrair(raw, 31, 39)
+                barra['CARGA_Mvar'] = extrair(raw, 39, 47)
+                barra['ELO_CC_Mvar'] = extrair(raw, 47, 59)
+                barra['EQUIV'] = extrair(raw, 59, 67)
+                barra['MOTOR_Mvar'] = extrair(raw, 67, 75)
+                barra['_tem_nome'] = True
+            
+            # LINHA C: Fluxo de circuito (esquerda vazia, dados à direita)
+            elif barra and barra.get('_tem_nome') and not campo_esq:
+                reg = {k: v for k, v in barra.items() if not k.startswith('_')}
+                reg['MVA_NOM'] = extrair(raw, 23, 31)
+                reg['MVA_EMR'] = extrair(raw, 31, 39)
+                reg['MVA_EQP'] = extrair(raw, 39, 47)
+                reg['FLUXO_%'] = extrair(raw, 47, 59)
+                reg['SHUNT_L'] = extrair(raw, 59, 67)
+                reg['PARA_NUM'] = extrair(raw, 75, 81)
+                reg['PARA_NOME'] = extrair(raw, 81, 94)
+                reg['NC'] = extrair(raw, 94, 97)
+                reg['FLUXO_MW'] = extrair(raw, 97, 105)
+                reg['FLUXO_Mvar'] = extrair(raw, 105, 113)
+                reg['MVA_Vd'] = extrair(raw, 113, 121)
+                reg['TAP'] = extrair(raw, 121, 128)
+                reg['DEFAS'] = extrair(raw, 128, 134)
+                reg['TIE'] = extrair(raw, 134, 140)
+                registros.append(reg)
+                barra['_tem_fluxo'] = True
+    
+    # Última barra sem fluxos
+    if barra and not barra.get('_tem_fluxo'):
+        reg = {k: v for k, v in barra.items() if not k.startswith('_')}
+        registros.append(reg)
+    
     return registros
 
+
 if __name__ == "__main__":
-    pasta_entrada = "Dados_Entrada"
-    base_de_dados_geral = []
+    pasta = "Dados_Entrada"
+    arquivo = next((os.path.join(pasta, f) for f in sorted(os.listdir(pasta)) if f.endswith(".txt")), None)
     
-    print("\n--- INICIANDO PROCESSAMENTO CONSOLIDADO (v4.5) ---")
-    
-    arquivos_txt = [f for f in os.listdir(pasta_entrada) if f.endswith(".txt")]
-    
-    if not arquivos_txt:
-        print(f"Erro: Nenhum arquivo encontrado em {pasta_entrada}")
-    else:
-        for idx, arquivo in enumerate(arquivos_txt):
-            caminho = os.path.join(pasta_entrada, arquivo)
-            print(f"[{idx+1}/{len(arquivos_txt)}] Processando: {arquivo}")
-            
-            novos_registros = processar_relatorio_consolidado(caminho)
-            base_de_dados_geral.extend(novos_registros)
+    if arquivo:
+        print(f"\n{'='*70}")
+        print(f"  PROCESSADOR v5.0 - Foco em PAG 4+ (RELATORIO COMPLETO)")
+        print(f"  Modo: Validação (1 arquivo)")
+        print(f"  Arquivo: {os.path.basename(arquivo)}")
+        print(f"{'='*70}\n")
         
-        # Criação do DataFrame Mestre
-        if base_de_dados_geral:
-            df_final = pd.DataFrame(base_de_dados_geral)
+        regs = processar_arquivo(arquivo)
+        df = pd.DataFrame(regs)
+        
+        if not df.empty:
+            # --- CONVERSÃO NUMÉRICA ---
+            # Limpar o "%" de FLUXO_% para virar número
+            if 'FLUXO_%' in df.columns:
+                df['FLUXO_%'] = df['FLUXO_%'].str.replace('%', '', regex=False)
             
-            # Limpeza e Tipagem: Tentar converter colunas numéricas
-            cols_numericas = ["NUM", "TENSÃO", "GERACAO_MW", "ANGULO", "Mvar"]
+            # Colunas que devem ser numéricas
+            cols_numericas = [
+                'NUM', 'KV', 'TIPO', 'TENSAO', 'GERACAO_MW', 'INJ_EQV_MW',
+                'CARGA_MW', 'ELO_CC_MW', 'SHUNT_Mvar', 'MOTOR_MW',
+                'ANG', 'GERACAO_Mvar', 'INJ_EQV_Mvar', 'CARGA_Mvar',
+                'ELO_CC_Mvar', 'EQUIV', 'MOTOR_Mvar',
+                'MVA_NOM', 'MVA_EMR', 'MVA_EQP', 'FLUXO_%', 'PARA_NUM', 'NC',
+                'FLUXO_MW', 'FLUXO_Mvar', 'MVA_Vd'
+            ]
             for col in cols_numericas:
-                df_final[col] = pd.to_numeric(df_final[col], errors='coerce').fillna(0)
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
             
-            # Exportação para Excel
-            output_name = "Resultado_Final_Consolidado.xlsx"
-            df_final.to_excel(output_name, index=False)
+            # --- PREVIEW ---
+            cols_preview = ['NUM', 'NOME', 'KV', 'TENSAO', 'PARA_NUM', 'PARA_NOME', 'FLUXO_%', 'SESSAO']
+            cols_ok = [c for c in cols_preview if c in df.columns]
             
-            print(f"\n==========================================")
-            print(f"SUCESSO! Processamento concluído.")
-            print(f"Total de registros extraídos: {len(df_final)}")
-            print(f"Arquivo gerado: {output_name}")
-            print(f"==========================================\n")
+            print(">>> PREVIEW DA TABELA (Top 15):\n")
+            print(df[cols_ok].head(15).to_string(index=False))
+            print(f"\n>>> Total de registros: {len(df)}")
+            print(f">>> Colunas: {list(df.columns)}")
+            
+            df.to_excel("Resultado_v5_Validacao.xlsx", index=False)
+            print(f"\nSalvo em: Resultado_v5_Validacao.xlsx")
+            print("(Os decimais aparecerão com vírgula no seu Excel BR)")
         else:
-            print("Nenhum registro técnico foi extraído dos arquivos.")
+            print("Nenhum registro extraído.")
+    else:
+        print("Nenhum arquivo .txt encontrado.")
