@@ -135,25 +135,30 @@ def processar_arquivo(caminho):
 
 if __name__ == "__main__":
     pasta = "Dados_Entrada"
-    arquivo = next((os.path.join(pasta, f) for f in sorted(os.listdir(pasta)) if f.endswith(".txt")), None)
+    arquivos = sorted([f for f in os.listdir(pasta) if f.endswith(".txt")])
     
-    if arquivo:
+    if not arquivos:
+        print("Nenhum arquivo .txt encontrado.")
+    else:
         print(f"\n{'='*70}")
-        print(f"  PROCESSADOR v5.0 - Foco em PAG 4+ (RELATORIO COMPLETO)")
-        print(f"  Modo: Validação (1 arquivo)")
-        print(f"  Arquivo: {os.path.basename(arquivo)}")
+        print(f"  PROCESSADOR v5.0 - CONSOLIDAÇÃO TOTAL")
+        print(f"  Arquivos encontrados: {len(arquivos)}")
         print(f"{'='*70}\n")
         
-        regs = processar_arquivo(arquivo)
-        df = pd.DataFrame(regs)
+        todos_registros = []
+        for idx, arq in enumerate(arquivos, 1):
+            caminho = os.path.join(pasta, arq)
+            print(f"  [{idx}/{len(arquivos)}] {arq}")
+            regs = processar_arquivo(caminho)
+            todos_registros.extend(regs)
+        
+        df = pd.DataFrame(todos_registros)
         
         if not df.empty:
             # --- CONVERSÃO NUMÉRICA ---
-            # Limpar o "%" de FLUXO_% para virar número
             if 'FLUXO_%' in df.columns:
                 df['FLUXO_%'] = df['FLUXO_%'].str.replace('%', '', regex=False)
             
-            # Colunas que devem ser numéricas
             cols_numericas = [
                 'NUM', 'KV', 'TIPO', 'TENSAO', 'GERACAO_MW', 'INJ_EQV_MW',
                 'CARGA_MW', 'ELO_CC_MW', 'SHUNT_Mvar', 'MOTOR_MW',
@@ -166,19 +171,15 @@ if __name__ == "__main__":
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
             
-            # --- PREVIEW ---
-            cols_preview = ['NUM', 'NOME', 'KV', 'TENSAO', 'PARA_NUM', 'PARA_NOME', 'FLUXO_%', 'SESSAO']
-            cols_ok = [c for c in cols_preview if c in df.columns]
+            # --- EXPORTAÇÃO ---
+            output = "Resultado_Final_Consolidado.xlsx"
+            df.to_excel(output, index=False)
             
-            print(">>> PREVIEW DA TABELA (Top 15):\n")
-            print(df[cols_ok].head(15).to_string(index=False))
-            print(f"\n>>> Total de registros: {len(df)}")
-            print(f">>> Colunas: {list(df.columns)}")
-            
-            df.to_excel("Resultado_v5_Validacao.xlsx", index=False)
-            print(f"\nSalvo em: Resultado_v5_Validacao.xlsx")
-            print("(Os decimais aparecerão com vírgula no seu Excel BR)")
+            print(f"\n{'='*70}")
+            print(f"  CONCLUÍDO!")
+            print(f"  Total de registros: {len(df):,}")
+            print(f"  Arquivo gerado: {output}")
+            print(f"{'='*70}\n")
         else:
             print("Nenhum registro extraído.")
-    else:
-        print("Nenhum arquivo .txt encontrado.")
+
