@@ -116,7 +116,7 @@ if __name__ == "__main__":
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
             
-            output = "Resultado_Final_Impedancia_PAG1.xlsx"
+            output = "Impedancia.xlsx"
             df.to_excel(output, index=False)
             
             print(f"\n{'='*70}")

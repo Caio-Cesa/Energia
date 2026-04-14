@@ -172,7 +172,7 @@ if __name__ == "__main__":
                     df[col] = pd.to_numeric(df[col], errors='coerce')
             
             # --- EXPORTAÇÃO ---
-            output = "Resultado_Final_Consolidado.xlsx"
+            output = "Base.xlsx"
             df.to_excel(output, index=False)
             
             print(f"\n{'='*70}")
